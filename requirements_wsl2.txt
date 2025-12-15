@@ -1,0 +1,24 @@
+# NeMo Diarization Requirements for WSL2 Ubuntu
+# Install in WSL2: /mnt/d/Git_repos/Nemo-diarization/venv_nemo_wsl
+
+# NeMo toolkit with ASR support
+nemo_toolkit[asr]>=1.20.0
+
+# Diarization
+pyannote.audio>=3.1.0
+
+# Deep learning
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Transcription
+openai-whisper>=20231117
+
+# Core dependencies
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
+librosa>=0.10.0
+
+# HuggingFace
+huggingface-hub>=0.20.0
