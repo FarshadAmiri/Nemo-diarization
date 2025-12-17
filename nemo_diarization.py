@@ -11,12 +11,9 @@ from typing import Optional, Dict, List, Union
 import platform
 
 
-def process_audio_with_nemo(
+def diarize_with_nemo(
     meeting_audio_path: str,
-    voice_embeddings_database_path: str,
-    expected_language: Optional[str] = None,
-    output_transcriptions: bool = False,
-    transcriptor_model_path: Optional[str] = None,
+    voice_embeddings_database_path: str = "",
     num_speakers: Optional[int] = None,
     output_dir: Optional[str] = None,
     use_wsl: bool = True
@@ -63,13 +60,12 @@ def process_audio_with_nemo(
     output_dir.mkdir(parents=True, exist_ok=True)
     
     print("="*70)
-    print("NVIDIA NeMo SPEAKER DIARIZATION PIPELINE")
+    print("NVIDIA NeMo SPEAKER DIARIZATION")
     print("="*70)
     print(f"Audio file: {meeting_audio_path}")
-    print(f"Voice database: {voice_embeddings_database_path}")
-    print(f"Language: {expected_language or 'auto-detect'}")
-    print(f"Transcription: {'enabled' if output_transcriptions else 'disabled'}")
-    print(f"Mode: {'WSL2 NeMo' if use_wsl else 'Windows pyannote'}")
+    if voice_embeddings_database_path:
+        print(f"Voice database: {voice_embeddings_database_path}")
+    print(f"Mode: {'WSL2 NeMo GPU' if use_wsl else 'Windows pyannote'}")
     print("="*70)
     
     # Choose processing backend
@@ -77,9 +73,6 @@ def process_audio_with_nemo(
         result = _process_with_nemo_wsl(
             meeting_audio_path=meeting_audio_path,
             voice_embeddings_database_path=voice_embeddings_database_path,
-            expected_language=expected_language,
-            output_transcriptions=output_transcriptions,
-            transcriptor_model_path=transcriptor_model_path,
             num_speakers=num_speakers,
             output_dir=output_dir
         )
@@ -87,12 +80,12 @@ def process_audio_with_nemo(
         result = _process_with_pyannote(
             meeting_audio_path=meeting_audio_path,
             voice_embeddings_database_path=voice_embeddings_database_path,
-            expected_language=expected_language,
-            output_transcriptions=output_transcriptions,
-            transcriptor_model_path=transcriptor_model_path,
             num_speakers=num_speakers,
             output_dir=output_dir
         )
+    
+    # Store audio path for transcription
+    result['audio_path'] = str(meeting_audio_path)
     
     return result
 
@@ -100,9 +93,6 @@ def process_audio_with_nemo(
 def _process_with_nemo_wsl(
     meeting_audio_path: str,
     voice_embeddings_database_path: str,
-    expected_language: Optional[str],
-    output_transcriptions: bool,
-    transcriptor_model_path: Optional[str],
     num_speakers: Optional[int],
     output_dir: Path
 ) -> Dict:
@@ -131,14 +121,6 @@ def _process_with_nemo_wsl(
     
     if num_speakers:
         cmd_args.extend(["--num-speakers", str(num_speakers)])
-    
-    if output_transcriptions:
-        cmd_args.append("--transcribe")
-        if expected_language:
-            cmd_args.extend(["--language", expected_language])
-        if transcriptor_model_path:
-            model_path_wsl = _windows_to_wsl_path(transcriptor_model_path)
-            cmd_args.extend(["--model-path", model_path_wsl])
     
     # Run WSL command - don't capture output, let it print directly
     print(f"Executing NeMo diarization in WSL...")
@@ -184,9 +166,6 @@ def _process_with_nemo_wsl(
 def _process_with_pyannote(
     meeting_audio_path: str,
     voice_embeddings_database_path: str,
-    expected_language: Optional[str],
-    output_transcriptions: bool,
-    transcriptor_model_path: Optional[str],
     num_speakers: Optional[int],
     output_dir: Path
 ) -> Dict:
@@ -497,34 +476,112 @@ def _merge_consecutive_segments(segments):
     return merged
 
 
+def add_transcription_to_segments(
+    diarization_result: Dict,
+    expected_language: Optional[str] = None,
+    model_name: str = "base"
+) -> Dict:
+    """
+    Add Whisper transcription to diarization segments (runs on Windows).
+    
+    Args:
+        diarization_result: Result from diarize_with_nemo()
+        expected_language: Language code ('en', 'fa', etc.) or None for auto-detect
+        model_name: Whisper model size ('tiny', 'base', 'small', 'medium', 'large')
+    
+    Returns:
+        Updated diarization result with transcription fields added
+    """
+    try:
+        import whisper
+    except ImportError:
+        raise ImportError("Whisper not installed. Install with: pip install openai-whisper")
+    
+    audio_path = diarization_result.get('audio_path')
+    if not audio_path:
+        raise ValueError("audio_path not found in diarization_result")
+    
+    print(f"\n[Transcription] Loading Whisper '{model_name}' model...")
+    model = whisper.load_model(model_name)
+    
+    print("[Transcription] Transcribing audio...")
+    transcription = model.transcribe(
+        audio_path,
+        language=expected_language,
+        word_timestamps=True,
+        verbose=False
+    )
+    
+    # Align transcription with speaker segments
+    print("[Transcription] Aligning with speaker segments...")
+    speaker_segments = []
+    segments = diarization_result.get('segments', [])
+    
+    for trans_seg in transcription['segments']:
+        trans_mid = (trans_seg['start'] + trans_seg['end']) / 2
+        
+        # Find the speaker for this segment
+        speaker = "UNKNOWN"
+        for dia_seg in segments:
+            if dia_seg['start'] <= trans_mid <= dia_seg['end']:
+                speaker = dia_seg['speaker']
+                break
+        
+        speaker_segments.append({
+            'start': trans_seg['start'],
+            'end': trans_seg['end'],
+            'speaker': speaker,
+            'text': trans_seg['text'].strip()
+        })
+    
+    # Update result with transcription
+    diarization_result['transcription'] = transcription['text']
+    diarization_result['speaker_segments'] = speaker_segments
+    diarization_result['detected_language'] = transcription.get('language')
+    
+    print(f"✓ Transcription complete")
+    print(f"✓ Detected language: {diarization_result['detected_language']}")
+    print(f"✓ Transcribed {len(speaker_segments)} segments")
+    
+    return diarization_result
+
+
 # Convenience function with simpler name
 def diarize_and_transcribe(
     meeting_audio_path: str,
     voice_embeddings_database_path: str = "",
     expected_language: Optional[str] = None,
-    output_transcriptions: bool = True,
-    transcriptor_model_path: Optional[str] = None,
-    **kwargs
+    transcriptor_model_name: str = "base",
+    num_speakers: Optional[int] = None,
+    use_wsl: bool = True
 ) -> Dict:
     """
-    Simplified wrapper function for diarization with transcription
+    Complete pipeline: diarization + transcription.
     
     Args:
         meeting_audio_path: Path to audio file
-        voice_embeddings_database_path: Path to speaker database (can be empty)
-        expected_language: Language code or None
-        output_transcriptions: Whether to transcribe
-        transcriptor_model_path: Path to Whisper model
-        **kwargs: Additional arguments for process_audio_with_nemo
+        voice_embeddings_database_path: Path to speaker database (optional)
+        expected_language: Language code or None for auto-detect
+        transcriptor_model_name: Whisper model ('tiny', 'base', 'small', 'medium', 'large')
+        num_speakers: Expected number of speakers (optional)
+        use_wsl: Use WSL2 NeMo (True) or Windows pyannote (False)
     
     Returns:
-        Diarization and transcription results
+        Complete diarization and transcription results
     """
-    return process_audio_with_nemo(
+    # Step 1: Diarization
+    result = diarize_with_nemo(
         meeting_audio_path=meeting_audio_path,
         voice_embeddings_database_path=voice_embeddings_database_path,
-        expected_language=expected_language,
-        output_transcriptions=output_transcriptions,
-        transcriptor_model_path=transcriptor_model_path,
-        **kwargs
+        num_speakers=num_speakers,
+        use_wsl=use_wsl
     )
+    
+    # Step 2: Add transcription
+    result = add_transcription_to_segments(
+        diarization_result=result,
+        expected_language=expected_language,
+        model_name=transcriptor_model_name
+    )
+    
+    return result

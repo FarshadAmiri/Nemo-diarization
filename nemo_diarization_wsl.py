@@ -207,9 +207,40 @@ def add_whisper_transcription(result, audio_path, language, model_path, output_d
         import whisper
     
     # Load model
-    if model_path and os.path.exists(model_path):
-        print(f"Loading custom Whisper model: {model_path}")
-        model = whisper.load_model(model_path)
+    if model_path:
+        # Check if it's a model size name (base, small, medium, large, etc.)
+        model_sizes = ['tiny', 'base', 'small', 'medium', 'large', 'large-v2', 'large-v3']
+        if model_path in model_sizes:
+            print(f"Loading Whisper {model_path} model...")
+            model = whisper.load_model(model_path)
+        elif os.path.exists(model_path) and model_path.endswith('.pt'):
+            print(f"Loading custom Whisper model from: {model_path}")
+            model = whisper.load_model(model_path)
+        else:
+            # Could be a HuggingFace cache path - try to extract model name
+            if 'whisper-' in model_path:
+                # Extract model size from path like "models--openai--whisper-medium"
+                if 'whisper-tiny' in model_path:
+                    model_name = 'tiny'
+                elif 'whisper-base' in model_path:
+                    model_name = 'base'
+                elif 'whisper-small' in model_path:
+                    model_name = 'small'
+                elif 'whisper-medium' in model_path:
+                    model_name = 'medium'
+                elif 'whisper-large-v3' in model_path:
+                    model_name = 'large-v3'
+                elif 'whisper-large-v2' in model_path:
+                    model_name = 'large-v2'
+                elif 'whisper-large' in model_path:
+                    model_name = 'large'
+                else:
+                    model_name = 'base'
+                print(f"Detected model size '{model_name}' from path, loading...")
+                model = whisper.load_model(model_name)
+            else:
+                print(f"Warning: Couldn't recognize model path, using base model...")
+                model = whisper.load_model("base")
     else:
         print("Loading Whisper base model...")
         model = whisper.load_model("base")
