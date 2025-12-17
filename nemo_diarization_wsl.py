@@ -10,6 +10,10 @@ import os
 import sys
 from pathlib import Path
 
+# Fix transformers hanging on WSL2/mounted drives
+os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = '1'
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
 
 def run_nemo_diarization(
     audio_path: str,
@@ -21,15 +25,23 @@ def run_nemo_diarization(
 ):
     """Run NeMo speaker diarization in WSL2"""
     
-    print("Initializing NeMo diarization (WSL2 mode)...")
+    print("Initializing NeMo diarization (WSL2 mode)...", flush=True)
     
     try:
+        print("Importing torch...", flush=True)
         import torch
+        print(f"✓ PyTorch loaded. CUDA available: {torch.cuda.is_available()}", flush=True)
+        
+        print("Importing NeMo ASR...", flush=True)
         import nemo.collections.asr as nemo_asr
+        print("✓ NeMo ASR imported", flush=True)
+        
+        print("Importing OmegaConf...", flush=True)
         from omegaconf import OmegaConf
+        print("✓ OmegaConf imported", flush=True)
     except ImportError as e:
-        print(f"Error importing NeMo: {e}")
-        print("NeMo toolkit should already be installed in the WSL2 environment")
+        print(f"Error importing NeMo: {e}", flush=True)
+        print("NeMo toolkit should already be installed in the WSL2 environment", flush=True)
         sys.exit(1)
     
     # Create output directory
@@ -54,11 +66,19 @@ def run_nemo_diarization(
     print(f"Created manifest: {manifest_path}")
     
     # Configure NeMo diarization
+    # Use GPU if available for much faster processing
+    device = 'cpu'
+    try:
+        if torch.cuda.is_available():
+            device = 'cuda'
+    except Exception:
+        device = 'cpu'
+
     config = {
-        'device': 'cpu',  # Use CPU for WSL2
-        'num_workers': 1,  # Number of workers for data loading
+        'device': device,
+        'num_workers': 0,  # Single process (multiprocessing has issues with mounted drives)
         'sample_rate': 16000,  # Audio sample rate
-        'batch_size': 64,  # Batch size for processing
+        'batch_size': 128,  # Larger batch size when using GPU
         'verbose': True,  # Show progress
         'diarizer': {
             'manifest_filepath': str(manifest_path),
@@ -105,10 +125,16 @@ def run_nemo_diarization(
     cfg = OmegaConf.create(config)
     
     # Load and run diarization
-    print("Loading NeMo clustering diarizer...")
+    print(f"Loading NeMo clustering diarizer on device: {device}...")
     from nemo.collections.asr.models import ClusteringDiarizer
     
     diarizer = ClusteringDiarizer(cfg=cfg)
+    # If using CUDA, ensure model is placed on GPU
+    try:
+        if device == 'cuda':
+            diarizer.to('cuda')
+    except Exception:
+        pass
     
     print(f"Running diarization on: {audio_path}")
     diarizer.diarize()

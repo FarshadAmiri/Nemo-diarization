@@ -118,7 +118,8 @@ def _process_with_nemo_wsl(
     wsl_script_path = Path(__file__).parent / "nemo_diarization_wsl.py"
     wsl_script_path_wsl = _windows_to_wsl_path(str(wsl_script_path))
     
-    venv_python = "/mnt/d/Git_repos/Nemo-diarization/venv_nemo_wsl/bin/python"
+    # Use native WSL venv (not on mounted drive) for fast imports
+    venv_python = "/home/user_1/nemo_venv/bin/python"
     
     cmd_args = [
         "wsl", "-d", "Ubuntu",
@@ -139,19 +140,44 @@ def _process_with_nemo_wsl(
             model_path_wsl = _windows_to_wsl_path(transcriptor_model_path)
             cmd_args.extend(["--model-path", model_path_wsl])
     
-    # Run WSL command
-    print(f"Executing: {' '.join(cmd_args)}")
-    result = subprocess.run(cmd_args, capture_output=True, text=True)
+    # Run WSL command - don't capture output, let it print directly
+    print(f"Executing NeMo diarization in WSL...")
+    print("Note: First run may take longer while models download\n")
+    
+    # Run without capturing output to avoid buffering/blocking issues
+    result = subprocess.run(cmd_args, check=False)
     
     if result.returncode != 0:
-        print(f"Error: {result.stderr}")
-        raise RuntimeError(f"NeMo diarization failed: {result.stderr}")
+        print(f"\nError: WSL process failed with code {result.returncode}")
+        raise RuntimeError(f"NeMo diarization failed")
+    
+    print("\n✓ NeMo diarization completed")
     
     # Load results from output file
     result_file = output_dir / "diarization_result.json"
     with open(result_file, 'r') as f:
         diarization_result = json.load(f)
+
+    # Speaker identification: match anonymous speakers to known voices
+    if voice_embeddings_database_path and os.path.exists(voice_embeddings_database_path):
+        try:
+            print("\n[Speaker Identification] Matching speakers to database...")
+            diarization_result = _identify_speakers_windows(
+                diarization_result,
+                meeting_audio_path,
+                voice_embeddings_database_path
+            )
+        except Exception as e:
+            print(f"Warning: speaker identification failed: {e}")
     
+    # Merge consecutive segments from the same speaker
+    if 'segments' in diarization_result:
+        original_count = len(diarization_result['segments'])
+        diarization_result['segments'] = _merge_consecutive_segments(diarization_result['segments'])
+        merged_count = len(diarization_result['segments'])
+        if merged_count < original_count:
+            print(f"✓ Merged {original_count} segments → {merged_count} segments")
+
     return diarization_result
 
 
@@ -330,6 +356,145 @@ def _windows_to_wsl_path(windows_path: str) -> str:
         return f"/mnt/{drive}{rest}"
     
     return path_str.replace('\\', '/')
+
+
+def _identify_speakers_windows(diarization_result, audio_path, embeddings_db_path):
+    """Identify clustered speakers by comparing Resemblyzer embeddings.
+
+    This runs on the Windows side (where the Resemblyzer DB was created).
+    It extracts each diarized segment to a temporary WAV (16k mono) using ffmpeg,
+    computes Resemblyzer embeddings, and matches against the supplied DB with
+    cosine similarity.
+    """
+    try:
+        from resemblyzer import VoiceEncoder, preprocess_wav
+    except Exception:
+        raise ImportError("Resemblyzer is required for speaker identification. Install with: pip install resemblyzer")
+
+    import numpy as np
+    from tempfile import NamedTemporaryFile
+
+    # Load known embeddings DB
+    with open(embeddings_db_path, 'r', encoding='utf-8') as f:
+        known_db = json.load(f)
+
+    # Convert known embeddings to numpy arrays
+    known_names = list(known_db.keys())
+    known_embeddings = [np.array(known_db[n]) for n in known_names]
+
+    encoder = VoiceEncoder()
+
+    def _cosine(a, b):
+        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10))
+
+    # Map diarizer speaker labels to known names
+    speaker_map = {}
+
+    segments = diarization_result.get('segments', [])
+    import tempfile
+    import subprocess
+    
+    for seg in segments:
+        start = seg['start']
+        end = seg['end']
+        speaker_label = seg.get('speaker', 'unknown')
+
+        # extract segment to temp wav using ffmpeg
+        # Use manual cleanup instead of with statement for better Windows compatibility
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.wav')
+        try:
+            os.close(tmp_fd)  # Close file descriptor immediately
+            
+            cmd = [
+                'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+                '-ss', str(start), '-to', str(end), '-i', str(audio_path),
+                '-ar', '16000', '-ac', '1', tmp_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"Warning: ffmpeg failed for segment {start}-{end}: {result.stderr}")
+                continue
+
+            # compute embedding
+            wav = preprocess_wav(tmp_path)
+            emb = encoder.embed_utterance(wav)
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+
+        # compare to known embeddings
+        best_name = None
+        best_score = -1.0
+        for name, k_emb in zip(known_names, known_embeddings):
+            score = _cosine(emb, k_emb)
+            if score > best_score:
+                best_score = score
+                best_name = name
+
+        # threshold for acceptance
+        if best_score >= 0.65:
+            identified = best_name
+        else:
+            identified = speaker_label
+
+        # store mapping for this speaker label (first seen wins if high confidence)
+        if speaker_label not in speaker_map:
+            speaker_map[speaker_label] = identified
+
+        seg['identified_speaker'] = identified
+        seg['match_score'] = round(best_score, 3)
+
+    # Optionally rename speakers in output to identified names when available
+    for seg in segments:
+        mapped = speaker_map.get(seg.get('speaker'))
+        if mapped and mapped != seg.get('speaker'):
+            seg['speaker'] = mapped
+
+    diarization_result['segments'] = segments
+    diarization_result['speaker_map'] = speaker_map
+
+    return diarization_result
+
+
+def _merge_consecutive_segments(segments):
+    """Merge consecutive segments from the same speaker.
+    
+    Args:
+        segments: List of segment dicts with 'start', 'end', 'speaker' keys
+    
+    Returns:
+        List of merged segments
+    """
+    if not segments:
+        return segments
+    
+    # Sort by start time
+    sorted_segments = sorted(segments, key=lambda x: x['start'])
+    
+    merged = []
+    current = sorted_segments[0].copy()
+    
+    for seg in sorted_segments[1:]:
+        # If same speaker and segments are close enough (within 1 second gap), merge
+        if seg['speaker'] == current['speaker'] and (seg['start'] - current['end']) < 1.0:
+            # Extend the current segment
+            current['end'] = seg['end']
+            # Preserve other fields if they exist
+            if 'match_score' in seg and 'match_score' in current:
+                # Average the match scores
+                current['match_score'] = round((current['match_score'] + seg['match_score']) / 2, 3)
+        else:
+            # Different speaker or too far apart, save current and start new
+            merged.append(current)
+            current = seg.copy()
+    
+    # Don't forget the last segment
+    merged.append(current)
+    
+    return merged
 
 
 # Convenience function with simpler name
