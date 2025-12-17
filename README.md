@@ -56,7 +56,3 @@ See [NEMO_README.md](NEMO_README.md) for complete documentation.
 ├── venv_nemo_wsl/              # WSL2 virtual environment
 └── outputs/                     # Output files directory
 ```
-
-## License
-
-MIT
