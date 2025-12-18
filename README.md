@@ -1,6 +1,6 @@
 # NeMo Speaker Diarization
 
-A complete speaker diarization pipeline using NVIDIA NeMo (via WSL2) or pyannote.audio with optional Whisper transcription.
+A complete speaker diarization pipeline using NVIDIA NeMo (via WSL2) with optional Whisper transcription.
 
 ## Features
 
