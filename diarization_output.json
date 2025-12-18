@@ -209,5 +209,56 @@
       "text": "uncommunicative, sending out no appreciable invitation, as if not at home."
     }
   ],
-  "detected_language": "en"
+  "detected_language": "en",
+  "merged_speeches": [
+    {
+      "start": 0.0,
+      "end": 20.38,
+      "speaker": "sp3000",
+      "text": "Arctic beauty and desolation, with their blessings and dangers, all may be found here, to test the endurance and skill of adventurous climbers. But far better than climbing the mountain is going around its warm, fertile base, enjoying its bounties like a bee circling around a bank of flowers."
+    },
+    {
+      "start": 21.18,
+      "end": 33.08,
+      "speaker": "sp422",
+      "text": "The distinctions of moral values have either originated in a ruling caste pleasantly conscious of being different from the ruled, or among the ruled class, the slaves and dependents of all sorts."
+    },
+    {
+      "start": 33.8,
+      "end": 39.68,
+      "speaker": "sp777",
+      "text": "Stevie, accustomed to move about disregarded, had got up from the kitchen table carrying off his drawing to bed with him."
+    },
+    {
+      "start": 40.18,
+      "end": 43.98,
+      "speaker": "sp422",
+      "text": "We truthful ones, the nobility in ancient Greece called themselves."
+    },
+    {
+      "start": 44.62,
+      "end": 58.22,
+      "speaker": "sp3000",
+      "text": "Perhaps the profession of doing good may be full, but everybody should be kind at least to himself. Thus one saunters on and on in the glorious radiance, in utter peace and forgetfulness of time."
+    },
+    {
+      "start": 59.02,
+      "end": 69.16,
+      "speaker": "sp777",
+      "text": "The sheet of paper covered with circles dropped out of his fingers, and he remained staring at the old terrorist, as if rooted suddenly to the spot by his morbid horror and dread of physical pain."
+    },
+    {
+      "start": 69.78,
+      "end": 82.12,
+      "speaker": "sp1993",
+      "text": "They sought about the house most of the day, as if it were Sunday, greasing their boots, mending their suspenders, plating whiplashes. Anyway, he would never allow one of his horses to be put to such a strain."
+    },
+    {
+      "start": 83.0,
+      "end": 95.18,
+      "speaker": "sp3000",
+      "text": "Yet strange to say, there are days, even here, somewhat dull-looking, when the mountain seems uncommunicative, sending out no appreciable invitation, as if not at home."
+    }
+  ],
+  "merged_speech_text": "[0.00s - 20.38s] sp3000: Arctic beauty and desolation, with their blessings and dangers, all may be found here, to test the endurance and skill of adventurous climbers. But far better than climbing the mountain is going around its warm, fertile base, enjoying its bounties like a bee circling around a bank of flowers.\n\n[21.18s - 33.08s] sp422: The distinctions of moral values have either originated in a ruling caste pleasantly conscious of being different from the ruled, or among the ruled class, the slaves and dependents of all sorts.\n\n[33.80s - 39.68s] sp777: Stevie, accustomed to move about disregarded, had got up from the kitchen table carrying off his drawing to bed with him.\n\n[40.18s - 43.98s] sp422: We truthful ones, the nobility in ancient Greece called themselves.\n\n[44.62s - 58.22s] sp3000: Perhaps the profession of doing good may be full, but everybody should be kind at least to himself. Thus one saunters on and on in the glorious radiance, in utter peace and forgetfulness of time.\n\n[59.02s - 69.16s] sp777: The sheet of paper covered with circles dropped out of his fingers, and he remained staring at the old terrorist, as if rooted suddenly to the spot by his morbid horror and dread of physical pain.\n\n[69.78s - 82.12s] sp1993: They sought about the house most of the day, as if it were Sunday, greasing their boots, mending their suspenders, plating whiplashes. Anyway, he would never allow one of his horses to be put to such a strain.\n\n[83.00s - 95.18s] sp3000: Yet strange to say, there are days, even here, somewhat dull-looking, when the mountain seems uncommunicative, sending out no appreciable invitation, as if not at home."
 }

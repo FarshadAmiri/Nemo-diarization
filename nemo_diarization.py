@@ -501,15 +501,20 @@ def add_transcription_to_segments(
     if not audio_path:
         raise ValueError("audio_path not found in diarization_result")
     
-    print(f"\n[Transcription] Loading Whisper '{model_name}' model...")
-    model = whisper.load_model(model_name)
+    # Detect GPU availability
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    print("[Transcription] Transcribing audio...")
+    print(f"\n[Transcription] Loading Whisper '{model_name}' model on {device.upper()}...")
+    model = whisper.load_model(model_name, device=device)
+    
+    print(f"[Transcription] Transcribing audio with {device.upper()}...")
     transcription = model.transcribe(
         audio_path,
         language=expected_language,
         word_timestamps=True,
-        verbose=False
+        verbose=False,
+        fp16=(device == "cuda")  # Use FP16 for GPU acceleration
     )
     
     # Align transcription with speaker segments
@@ -538,11 +543,39 @@ def add_transcription_to_segments(
     diarization_result['transcription'] = transcription['text']
     diarization_result['speaker_segments'] = speaker_segments
     diarization_result['detected_language'] = transcription.get('language')
-    
+
+    # Merge consecutive speaker_segments for constant speakers into higher-level speech blocks
+    merged_speeches = []
+    if speaker_segments:
+        # ensure sorted by start time
+        sorted_segs = sorted(speaker_segments, key=lambda s: s['start'])
+        cur = sorted_segs[0].copy()
+
+        for seg in sorted_segs[1:]:
+            # If same speaker and gap between segments is small (<=1.0s), merge
+            gap = seg['start'] - cur['end']
+            if seg['speaker'] == cur['speaker'] and gap <= 1.0:
+                # extend current block
+                cur['end'] = seg['end']
+                # join text with a space
+                cur['text'] = (cur.get('text','') + ' ' + seg.get('text','')).strip()
+            else:
+                merged_speeches.append(cur)
+                cur = seg.copy()
+        merged_speeches.append(cur)
+
+    diarization_result['merged_speeches'] = merged_speeches
+
+    # Create a single concatenated text suitable for LLM input (speaker-labelled, merged)
+    parts = []
+    for block in merged_speeches:
+        parts.append(f"[{block['start']:.2f}s - {block['end']:.2f}s] {block['speaker']}: {block.get('text','')}")
+    diarization_result['merged_speech_text'] = '\n\n'.join(parts)
+
     print(f"✓ Transcription complete")
     print(f"✓ Detected language: {diarization_result['detected_language']}")
-    print(f"✓ Transcribed {len(speaker_segments)} segments")
-    
+    print(f"✓ Transcribed {len(speaker_segments)} segments, merged into {len(merged_speeches)} speech blocks")
+
     return diarization_result
 
 
