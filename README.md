@@ -40,10 +40,6 @@ pip install -r requirements_windows.txt
 wsl -d Ubuntu bash -c "cd /mnt/d/Git_repos/Nemo-diarization/venv_nemo_wsl && bin/pip install -r /mnt/d/Git_repos/Nemo-diarization/requirements_wsl2.txt"
 ```
 
-## Documentation
-
-See [NEMO_README.md](NEMO_README.md) for complete documentation.
-
 ## Project Structure
 
 ```
