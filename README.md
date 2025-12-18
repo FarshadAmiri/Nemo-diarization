@@ -39,16 +39,3 @@ pip install -r requirements_windows.txt
 ```bash
 wsl -d Ubuntu bash -c "cd /mnt/d/Git_repos/Nemo-diarization/venv_nemo_wsl && bin/pip install -r /mnt/d/Git_repos/Nemo-diarization/requirements_wsl2.txt"
 ```
-
-## Project Structure
-
-```
-├── nemo_diarization.py          # Main diarization function
-├── nemo_diarization_wsl.py      # WSL2 NeMo backend script
-├── test_nemo_diarization.ipynb  # Interactive test notebook
-├── example_usage.py             # Usage examples
-├── requirements_windows.txt     # Windows dependencies
-├── requirements_wsl2.txt        # WSL2 dependencies
-├── venv_nemo_wsl/              # WSL2 virtual environment
-└── outputs/                     # Output files directory
-```
